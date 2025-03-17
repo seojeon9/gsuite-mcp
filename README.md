@@ -1,5 +1,7 @@
 # Google Workspace MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@rishipradeep-think41/gsuite-mcp)](https://smithery.ai/server/@rishipradeep-think41/gsuite-mcp)
+
 A Model Context Protocol (MCP) server that provides tools for interacting with Gmail and Calendar APIs. This server enables you to manage your emails and calendar events programmatically through the MCP interface.
 
 ## Features
@@ -35,6 +37,15 @@ A Model Context Protocol (MCP) server that provides tools for interacting with G
 
 ## Setup Instructions
 
+### Installing via Smithery
+
+To install gsuite-mcp for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@rishipradeep-think41/gsuite-mcp):
+
+```bash
+npx -y @smithery/cli install @rishipradeep-think41/gsuite-mcp --client claude
+```
+
+### Installing Manually
 1. **Clone and Install**:
    ```bash
    git clone https://github.com/epaproditus/google-workspace-mcp-server.git
