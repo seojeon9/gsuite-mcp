@@ -422,6 +422,7 @@ class GoogleWorkspaceServer {
             from,
             date,
             body,
+            labels: detail.data.labelIds || [],
           };
         })
       );
