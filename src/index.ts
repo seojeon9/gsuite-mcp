@@ -8,12 +8,54 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { google } from "googleapis";
+import { readFileSync, appendFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+function log(message: string): void {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}`;
+  console.log(logMessage);
+
+  try {
+      appendFileSync("mcp-server.log", logMessage + "\n");
+  } catch (error) {
+      console.error("Failed to write to log file:", (error as Error).message);
+  }
+}
 
 // Environment variables required for OAuth
+// Load .env file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = join(__dirname, "..", ".env");
+
+try {
+  const envContent = readFileSync(envPath, "utf8");
+  const envVars: Record<string, string> = {};
+
+  envContent.split("\n").forEach((line: string) => {
+    line = line.trim();
+    if (line && !line.startsWith("#")) {
+      const [key, ...valueParts] = line.split("=");
+      if (key && valueParts.length > 0) {
+          let value = valueParts.join("=");
+          // Remove quotes and trailing comma
+          value = value.replace(/^["']|["'],?$/g, "");
+          envVars[key] = value;
+          process.env[key] = value;
+      }
+    }
+  });
+
+    console.log("✅ Loaded environment variables from .env file");
+} catch (error) {
+    console.log("⚠️  Could not load .env file, using system environment variables");
+}
+
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
-
 if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
   throw new Error(
     "Required Google OAuth credentials not found in environment variables"
@@ -22,9 +64,9 @@ if (!CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN) {
 
 class GoogleWorkspaceServer {
   private server: Server;
-  private auth;
-  private gmail;
-  private calendar;
+  private auth: any;
+  private gmail: any;
+  private calendar: any;
 
   constructor() {
     this.server = new Server(
@@ -60,6 +102,14 @@ class GoogleWorkspaceServer {
   private setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
+        {
+          name: "get_current_datetime",
+          description: "Get current date and time in Korean format",
+          inputSchema: {
+              type: "object",
+              properties: {},
+          },
+        },
         {
           name: "list_emails",
           description: "List recent emails from Gmail inbox",
@@ -159,21 +209,21 @@ class GoogleWorkspaceServer {
         },
         {
           name: "list_events",
-          description: "List upcoming calendar events",
+          description: "List calendar events from Google Calendar. You can fetch events from the past, future, or any specific date range by using the optional parameters 'timeMin' and 'timeMax'. Both accept ISO 8601 datetime strings (e.g., '2025-08-13T14:00:00+09:00'). If omitted, the default range starts from now.",
           inputSchema: {
             type: "object",
             properties: {
               maxResults: {
                 type: "number",
-                description: "Maximum number of events to return (default: 10)",
+                description: "Maximum number of events to return (default: 30)",
               },
               timeMin: {
                 type: "string",
-                description: "Start time in ISO format (default: now)",
+                description: "Start time in ISO format. Can be in the past.",
               },
               timeMax: {
                 type: "string",
-                description: "End time in ISO format",
+                description: "End time in ISO format. Can be in the future or past.",
               },
             },
           },
@@ -270,30 +320,57 @@ class GoogleWorkspaceServer {
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const args = request.params.arguments || {};
+
       switch (request.params.name) {
+        case "get_current_datetime":
+          return await this.handleGetCurrentDateTime();
         case "list_emails":
-          return await this.handleListEmails(request.params.arguments);
+          return await this.handleListEmails(args);
         case "search_emails":
-          return await this.handleSearchEmails(request.params.arguments);
+          return await this.handleSearchEmails(args);
         case "send_email":
-          return await this.handleSendEmail(request.params.arguments);
+          return await this.handleSendEmail(args);
         case "modify_email":
-          return await this.handleModifyEmail(request.params.arguments);
+          return await this.handleModifyEmail(args);
         case "list_events":
-          return await this.handleListEvents(request.params.arguments);
+          return await this.handleListEvents(args);
         case "create_event":
-          return await this.handleCreateEvent(request.params.arguments);
+          return await this.handleCreateEvent(args);
         case "update_event":
-          return await this.handleUpdateEvent(request.params.arguments);
+          return await this.handleUpdateEvent(args);
         case "delete_event":
-          return await this.handleDeleteEvent(request.params.arguments);
+          return await this.handleDeleteEvent(args);
         default:
-          throw new McpError(
-            ErrorCode.MethodNotFound,
-            `Unknown tool: ${request.params.name}`
-          );
+          throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
       }
     });
+  }
+
+  private async handleGetCurrentDateTime() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const seconds = now.getSeconds().toString().padStart(2, '0');
+
+    const weekdays = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const weekday = weekdays[now.getDay()];
+
+    const currentDateTime = `${year}년 ${month}월 ${day}일 ${weekday} ${hours}:${minutes}:${seconds}`;
+
+    log(`📅 get_current_datetime called: ${currentDateTime}`);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: currentDateTime,
+        },
+      ],
+    };
   }
 
   private async handleListEmails(args: any) {
@@ -302,11 +379,9 @@ class GoogleWorkspaceServer {
       const query = args?.query || "";
       const getEmailBody = (payload: any): string => {
         if (!payload) return "";
-
         if (payload.body && payload.body.data) {
           return Buffer.from(payload.body.data, "base64").toString("utf-8");
         }
-
         if (payload.parts && payload.parts.length > 0) {
           for (const part of payload.parts) {
             if (part.mimeType === "text/plain") {
@@ -314,31 +389,28 @@ class GoogleWorkspaceServer {
             }
           }
         }
-
         return "(No body content)";
       };
-
       const response = await this.gmail.users.messages.list({
         userId: "me",
         maxResults,
         q: query,
       });
-
       const messages = response.data.messages || [];
       const emailDetails = await Promise.all(
-        messages.map(async (msg) => {
+        messages.map(async (msg: any) => {
           const detail = await this.gmail.users.messages.get({
             userId: "me",
-            id: msg.id!,
+            id: msg.id,
           });
-
           const headers = detail.data.payload?.headers;
           const subject =
-            headers?.find((h) => h.name === "Subject")?.value || "";
-          const from = headers?.find((h) => h.name === "From")?.value || "";
-          const date = headers?.find((h) => h.name === "Date")?.value || "";
+            headers?.find((h: any) => h.name === "Subject")?.value || "";
+          const from =
+            headers?.find((h: any) => h.name === "From")?.value || "";
+          const date =
+            headers?.find((h: any) => h.name === "Date")?.value || "";
           const body = getEmailBody(detail.data.payload);
-
           return {
             id: msg.id,
             subject,
@@ -348,7 +420,6 @@ class GoogleWorkspaceServer {
           };
         })
       );
-
       return {
         content: [
           {
@@ -357,12 +428,12 @@ class GoogleWorkspaceServer {
           },
         ],
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error fetching emails: ${error.message}`,
+            text: `Error fetching emails: ${(error as Error).message}`,
           },
         ],
         isError: true,
@@ -374,14 +445,11 @@ class GoogleWorkspaceServer {
     try {
       const maxResults = args?.maxResults || 10;
       const query = args?.query || "";
-
       const getEmailBody = (payload: any): string => {
         if (!payload) return "";
-
         if (payload.body && payload.body.data) {
           return Buffer.from(payload.body.data, "base64").toString("utf-8");
         }
-
         if (payload.parts && payload.parts.length > 0) {
           for (const part of payload.parts) {
             if (part.mimeType === "text/plain") {
@@ -389,32 +457,29 @@ class GoogleWorkspaceServer {
             }
           }
         }
-
         return "(No body content)";
       };
-
       const response = await this.gmail.users.messages.list({
         userId: "me",
         maxResults,
         q: query,
       });
-
       const messages = response.data.messages || [];
       const emailDetails = await Promise.all(
-        messages.map(async (msg) => {
+        messages.map(async (msg: any) => {
           const detail = await this.gmail.users.messages.get({
             userId: "me",
-            id: msg.id!,
+            id: msg.id,
           });
-
           const headers = detail.data.payload?.headers;
           const subject =
-            headers?.find((h) => h.name === "Subject")?.value || "";
-          const from = headers?.find((h) => h.name === "From")?.value || "";
-          const date = headers?.find((h) => h.name === "Date")?.value || "";
+            headers?.find((h: any) => h.name === "Subject")?.value || "";
+          const from =
+            headers?.find((h: any) => h.name === "From")?.value || "";
+          const date =
+            headers?.find((h: any) => h.name === "Date")?.value || "";
           const body = getEmailBody(detail.data.payload);
           // Use helper function to extract the email body correctly
-
           return {
             id: msg.id,
             subject,
@@ -425,7 +490,6 @@ class GoogleWorkspaceServer {
           };
         })
       );
-
       return {
         content: [
           {
@@ -434,12 +498,12 @@ class GoogleWorkspaceServer {
           },
         ],
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error fetching emails: ${error.message}`,
+            text: `Error fetching emails: ${(error as Error).message}`,
           },
         ],
         isError: true,
@@ -537,6 +601,9 @@ class GoogleWorkspaceServer {
 
   private async handleCreateEvent(args: any) {
     try {
+      const raw = args;
+      const parsedArgs = typeof raw === "string" ? JSON.parse(raw) : raw;
+
       const {
         summary,
         location,
@@ -544,7 +611,7 @@ class GoogleWorkspaceServer {
         start,
         end,
         attendees = [],
-      } = args;
+      } = parsedArgs;
 
       const event = {
         summary,
@@ -589,8 +656,11 @@ class GoogleWorkspaceServer {
 
   private async handleUpdateEvent(args: any) {
     try {
+      const raw = args;
+      const parsedArgs = typeof raw === "string" ? JSON.parse(raw) : raw;
+
       const { eventId, summary, location, description, start, end, attendees } =
-        args;
+      parsedArgs;
 
       const event: any = {};
       if (summary) event.summary = summary;
@@ -641,7 +711,9 @@ class GoogleWorkspaceServer {
 
   private async handleDeleteEvent(args: any) {
     try {
-      const { eventId } = args;
+      const raw = args;
+      const parsedArgs = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const { eventId } = parsedArgs;
 
       await this.calendar.events.delete({
         calendarId: "primary",
@@ -670,10 +742,15 @@ class GoogleWorkspaceServer {
   }
 
   private async handleListEvents(args: any) {
+    log(`📅 list_events called with args: ${JSON.stringify(args)}`);
     try {
-      const maxResults = args?.maxResults || 10;
-      const timeMin = args?.timeMin || new Date().toISOString();
-      const timeMax = args?.timeMax;
+      const raw = args;
+      const parsedArgs = typeof raw === "string" ? JSON.parse(raw) : raw;
+
+      const maxResults = parsedArgs?.maxResults || 10;
+      const timeMin = parsedArgs?.timeMin || new Date().toISOString();
+      const timeMax = parsedArgs?.timeMax;
+      log(`📅 timeMin: ${timeMin}, timeMax: ${timeMax}`);
 
       const response = await this.calendar.events.list({
         calendarId: "primary",
@@ -683,15 +760,14 @@ class GoogleWorkspaceServer {
         singleEvents: true,
         orderBy: "startTime",
       });
-
-      const events = response.data.items?.map((event) => ({
+      const events = response.data.items?.map((event: any) => ({
         id: event.id,
         summary: event.summary,
         start: event.start,
         end: event.end,
         location: event.location,
       }));
-
+      log(`📅 Found ${events?.length || 0} events`);
       return {
         content: [
           {
@@ -700,12 +776,13 @@ class GoogleWorkspaceServer {
           },
         ],
       };
-    } catch (error: any) {
+    } catch (error) {
+      log(`❌ list_events error: ${(error as Error).message}`);
       return {
         content: [
           {
             type: "text",
-            text: `Error fetching calendar events: ${error.message}`,
+            text: `Error fetching calendar events: ${(error as Error).message}`,
           },
         ],
         isError: true,
