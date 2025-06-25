@@ -745,7 +745,18 @@ class GoogleWorkspaceServer {
     log(`📅 list_events called with args: ${JSON.stringify(args)}`);
     try {
       const raw = args;
-      const parsedArgs = typeof raw === "string" ? JSON.parse(raw) : raw;
+      let parsedArgs = raw;
+
+      if (typeof raw === 'string') {
+        try {
+          parsedArgs = JSON.parse(raw);
+          if (typeof parsedArgs === 'string') {
+            parsedArgs = JSON.parse(parsedArgs);
+          }
+        } catch (e) {
+          console.error('JSON parse error:', e);
+        }
+      }
 
       const maxResults = parsedArgs?.maxResults || 10;
       const timeMin = parsedArgs?.timeMin || new Date().toISOString();
