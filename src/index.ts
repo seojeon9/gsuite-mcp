@@ -758,7 +758,7 @@ class GoogleWorkspaceServer {
         }
       }
 
-      const maxResults = parsedArgs?.maxResults || 10;
+      const maxResults = parsedArgs?.maxResults || 50;
       const timeMin = parsedArgs?.timeMin || new Date().toISOString();
       const timeMax = parsedArgs?.timeMax;
       log(`📅 timeMin: ${timeMin}, timeMax: ${timeMax}`);
