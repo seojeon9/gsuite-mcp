@@ -209,7 +209,7 @@ class GoogleWorkspaceServer {
         },
         {
           name: "list_events",
-          description: "List calendar events from Google Calendar. You can fetch events from the past, future, or any specific date range by using the optional parameters 'timeMin' and 'timeMax'. Both accept ISO 8601 datetime strings (e.g., '2025-08-13T14:00:00+09:00'). If omitted, the default range starts from now.",
+          description: "List calendar events from Google Calendar. You can fetch events from the past, future, or any specific date range by using the optional parameters 'timeMin' and 'timeMax'. Both accept ISO 8601 datetime strings. If omitted, the default range starts from now. Example: {\"timeMin\": \"2025-03-13T14:00:00+09:00\",\"timeMax\": \"2025-03-20T23:59:59+09:00\"}",
           inputSchema: {
             type: "object",
             properties: {
