@@ -320,7 +320,7 @@ class GoogleWorkspaceServer {
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const args = request.params.arguments || {};
+      const args = request.params.arguments?.query || {};
 
       switch (request.params.name) {
         case "get_current_datetime":
